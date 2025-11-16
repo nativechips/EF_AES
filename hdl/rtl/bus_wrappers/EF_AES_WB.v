@@ -22,7 +22,7 @@
 `timescale 1ns / 1ps
 `default_nettype none
 
-module EF_AES_WB_Fixed (
+module EF_AES_WB (
 `ifdef USE_POWER_PINS
     inout VPWR,
     inout VGND,
