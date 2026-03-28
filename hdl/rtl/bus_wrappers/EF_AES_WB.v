@@ -23,17 +23,21 @@
 `default_nettype none
 
 module EF_AES_WB (
+`ifdef USE_POWER_PINS
+    inout VPWR,
+    inout VGND,
+`endif
 
-    input  wire        clk_i,
-    input  wire        rst_i,
-    input  wire [31:0] adr_i,
-    input  wire [31:0] dat_i,
-    output wire [31:0] dat_o,
-    input  wire [ 3:0] sel_i,
-    input  wire        cyc_i,
-    input  wire        stb_i,
-    output reg         ack_o,
-    input  wire        we_i,
+    input  wire        wb_clk_i,
+    input  wire        wb_rst_i,
+    input  wire [31:0] wbs_adr_i,
+    input  wire [31:0] wbs_dat_i,
+    output wire [31:0] wbs_dat_o,
+    input  wire [ 3:0] wbs_sel_i,
+    input  wire        wbs_cyc_i,
+    input  wire        wbs_stb_i,
+    output reg         wbs_ack_o,
+    input  wire        wbs_we_i,
     output wire        IRQ
 );
 
@@ -60,25 +64,13 @@ module EF_AES_WB (
   localparam RIS_REG_OFFSET = 16'hFF08;
   localparam IC_REG_OFFSET = 16'hFF0C;
 
-  reg [0:0] GCLK_REG;
-  wire clk_g;
+  wire           clk = wb_clk_i;
+  wire           reset_n = (~wb_rst_i);
 
-  wire clk_gated_en = GCLK_REG[0];
-  ef_util_gating_cell clk_gate_cell (
-
-      // USE_POWER_PINS
-      .clk(clk_i),
-      .clk_en(clk_gated_en),
-      .clk_o(clk_g)
-  );
-
-  wire           clk = clk_g;
-  wire           reset_n = (~rst_i);
-
-  wire           wb_valid = cyc_i & stb_i;
-  wire           wb_we = we_i & wb_valid;
-  wire           wb_re = ~we_i & wb_valid;
-  wire [    3:0] wb_byte_sel = sel_i & {4{wb_we}};
+  wire           wb_valid = wbs_cyc_i & wbs_stb_i;
+  wire           wb_we = wbs_we_i & wb_valid;
+  wire           wb_re = ~wbs_we_i & wb_valid;
+  wire [    3:0] wb_byte_sel = wbs_sel_i & {4{wb_we}};
 
   wire [  1-1:0] encdec;
   wire [  1-1:0] init;
@@ -90,139 +82,115 @@ module EF_AES_WB (
   wire [128-1:0] result;
   wire [  1-1:0] result_valid;
 
-  // Register Definitions
   wire [  8-1:0] STATUS_WIRE;
+  assign STATUS_WIRE[5 : 0] = 6'b0;
   assign STATUS_WIRE[6 : 6] = ready;
   assign STATUS_WIRE[7 : 7] = result_valid;
 
   reg [7:0] CTRL_REG;
-  assign init   = CTRL_REG[0 : 0];
-  assign next   = CTRL_REG[1 : 1];
+  assign init = CTRL_REG[0 : 0];
+  assign next = CTRL_REG[1 : 1];
   assign encdec = CTRL_REG[2 : 2];
   assign keylen = CTRL_REG[3 : 3];
-  always @(posedge clk_i or posedge rst_i)
-    if (rst_i) CTRL_REG <= 0;
-    else if (wb_we & (adr_i[16-1:0] == CTRL_REG_OFFSET)) CTRL_REG <= dat_i[8-1:0];
+  always @(posedge wb_clk_i or posedge wb_rst_i)
+    if (wb_rst_i) CTRL_REG <= 8'b0;
+    else if (wb_we & (wbs_adr_i[16-1:0] == CTRL_REG_OFFSET)) CTRL_REG <= wbs_dat_i[8-1:0];
 
   reg [31:0] KEY0_REG;
   assign key[31:0] = KEY0_REG;
-  always @(posedge clk_i or posedge rst_i)
-    if (rst_i) KEY0_REG <= 0;
-    else if (wb_we & (adr_i[16-1:0] == KEY0_REG_OFFSET)) KEY0_REG <= dat_i[32-1:0];
+  always @(posedge wb_clk_i or posedge wb_rst_i)
+    if (wb_rst_i) KEY0_REG <= 32'b0;
+    else if (wb_we & (wbs_adr_i[16-1:0] == KEY0_REG_OFFSET)) KEY0_REG <= wbs_dat_i[32-1:0];
 
   reg [31:0] KEY1_REG;
   assign key[63:32] = KEY1_REG;
-  always @(posedge clk_i or posedge rst_i)
-    if (rst_i) KEY1_REG <= 0;
-    else if (wb_we & (adr_i[16-1:0] == KEY1_REG_OFFSET)) KEY1_REG <= dat_i[32-1:0];
+  always @(posedge wb_clk_i or posedge wb_rst_i)
+    if (wb_rst_i) KEY1_REG <= 32'b0;
+    else if (wb_we & (wbs_adr_i[16-1:0] == KEY1_REG_OFFSET)) KEY1_REG <= wbs_dat_i[32-1:0];
 
   reg [31:0] KEY2_REG;
   assign key[95:64] = KEY2_REG;
-  always @(posedge clk_i or posedge rst_i)
-    if (rst_i) KEY2_REG <= 0;
-    else if (wb_we & (adr_i[16-1:0] == KEY2_REG_OFFSET)) KEY2_REG <= dat_i[32-1:0];
+  always @(posedge wb_clk_i or posedge wb_rst_i)
+    if (wb_rst_i) KEY2_REG <= 32'b0;
+    else if (wb_we & (wbs_adr_i[16-1:0] == KEY2_REG_OFFSET)) KEY2_REG <= wbs_dat_i[32-1:0];
 
   reg [31:0] KEY3_REG;
   assign key[127:96] = KEY3_REG;
-  always @(posedge clk_i or posedge rst_i)
-    if (rst_i) KEY3_REG <= 0;
-    else if (wb_we & (adr_i[16-1:0] == KEY3_REG_OFFSET)) KEY3_REG <= dat_i[32-1:0];
+  always @(posedge wb_clk_i or posedge wb_rst_i)
+    if (wb_rst_i) KEY3_REG <= 32'b0;
+    else if (wb_we & (wbs_adr_i[16-1:0] == KEY3_REG_OFFSET)) KEY3_REG <= wbs_dat_i[32-1:0];
 
   reg [31:0] KEY4_REG;
   assign key[159:128] = KEY4_REG;
-  always @(posedge clk_i or posedge rst_i)
-    if (rst_i) KEY4_REG <= 0;
-    else if (wb_we & (adr_i[16-1:0] == KEY4_REG_OFFSET)) KEY4_REG <= dat_i[32-1:0];
+  always @(posedge wb_clk_i or posedge wb_rst_i)
+    if (wb_rst_i) KEY4_REG <= 32'b0;
+    else if (wb_we & (wbs_adr_i[16-1:0] == KEY4_REG_OFFSET)) KEY4_REG <= wbs_dat_i[32-1:0];
 
   reg [31:0] KEY5_REG;
   assign key[191:160] = KEY5_REG;
-  always @(posedge clk_i or posedge rst_i)
-    if (rst_i) KEY5_REG <= 0;
-    else if (wb_we & (adr_i[16-1:0] == KEY5_REG_OFFSET)) KEY5_REG <= dat_i[32-1:0];
+  always @(posedge wb_clk_i or posedge wb_rst_i)
+    if (wb_rst_i) KEY5_REG <= 32'b0;
+    else if (wb_we & (wbs_adr_i[16-1:0] == KEY5_REG_OFFSET)) KEY5_REG <= wbs_dat_i[32-1:0];
 
   reg [31:0] KEY6_REG;
   assign key[223:192] = KEY6_REG;
-  always @(posedge clk_i or posedge rst_i)
-    if (rst_i) KEY6_REG <= 0;
-    else if (wb_we & (adr_i[16-1:0] == KEY6_REG_OFFSET)) KEY6_REG <= dat_i[32-1:0];
+  always @(posedge wb_clk_i or posedge wb_rst_i)
+    if (wb_rst_i) KEY6_REG <= 32'b0;
+    else if (wb_we & (wbs_adr_i[16-1:0] == KEY6_REG_OFFSET)) KEY6_REG <= wbs_dat_i[32-1:0];
 
   reg [31:0] KEY7_REG;
   assign key[255:224] = KEY7_REG;
-  always @(posedge clk_i or posedge rst_i)
-    if (rst_i) KEY7_REG <= 0;
-    else if (wb_we & (adr_i[16-1:0] == KEY7_REG_OFFSET)) KEY7_REG <= dat_i[32-1:0];
+  always @(posedge wb_clk_i or posedge wb_rst_i)
+    if (wb_rst_i) KEY7_REG <= 32'b0;
+    else if (wb_we & (wbs_adr_i[16-1:0] == KEY7_REG_OFFSET)) KEY7_REG <= wbs_dat_i[32-1:0];
 
   reg [31:0] BLOCK0_REG;
   assign block[31:0] = BLOCK0_REG;
-  always @(posedge clk_i or posedge rst_i)
-    if (rst_i) BLOCK0_REG <= 0;
-    else if (wb_we & (adr_i[16-1:0] == BLOCK0_REG_OFFSET)) BLOCK0_REG <= dat_i[32-1:0];
+  always @(posedge wb_clk_i or posedge wb_rst_i)
+    if (wb_rst_i) BLOCK0_REG <= 32'b0;
+    else if (wb_we & (wbs_adr_i[16-1:0] == BLOCK0_REG_OFFSET)) BLOCK0_REG <= wbs_dat_i[32-1:0];
 
   reg [31:0] BLOCK1_REG;
   assign block[63:32] = BLOCK1_REG;
-  always @(posedge clk_i or posedge rst_i)
-    if (rst_i) BLOCK1_REG <= 0;
-    else if (wb_we & (adr_i[16-1:0] == BLOCK1_REG_OFFSET)) BLOCK1_REG <= dat_i[32-1:0];
+  always @(posedge wb_clk_i or posedge wb_rst_i)
+    if (wb_rst_i) BLOCK1_REG <= 32'b0;
+    else if (wb_we & (wbs_adr_i[16-1:0] == BLOCK1_REG_OFFSET)) BLOCK1_REG <= wbs_dat_i[32-1:0];
 
   reg [31:0] BLOCK2_REG;
   assign block[95:64] = BLOCK2_REG;
-  always @(posedge clk_i or posedge rst_i)
-    if (rst_i) BLOCK2_REG <= 0;
-    else if (wb_we & (adr_i[16-1:0] == BLOCK2_REG_OFFSET)) BLOCK2_REG <= dat_i[32-1:0];
+  always @(posedge wb_clk_i or posedge wb_rst_i)
+    if (wb_rst_i) BLOCK2_REG <= 32'b0;
+    else if (wb_we & (wbs_adr_i[16-1:0] == BLOCK2_REG_OFFSET)) BLOCK2_REG <= wbs_dat_i[32-1:0];
 
   reg [31:0] BLOCK3_REG;
   assign block[127:96] = BLOCK3_REG;
-  always @(posedge clk_i or posedge rst_i)
-    if (rst_i) BLOCK3_REG <= 0;
-    else if (wb_we & (adr_i[16-1:0] == BLOCK3_REG_OFFSET)) BLOCK3_REG <= dat_i[32-1:0];
+  always @(posedge wb_clk_i or posedge wb_rst_i)
+    if (wb_rst_i) BLOCK3_REG <= 32'b0;
+    else if (wb_we & (wbs_adr_i[16-1:0] == BLOCK3_REG_OFFSET)) BLOCK3_REG <= wbs_dat_i[32-1:0];
 
-  reg [31:0] RESULT0_REG;
-  assign result[31:0] = RESULT0_REG;
-  always @(posedge clk_i or posedge rst_i)
-    if (rst_i) RESULT0_REG <= 0;
-    else if (wb_we & (adr_i[16-1:0] == RESULT0_REG_OFFSET)) RESULT0_REG <= dat_i[32-1:0];
-
-  reg [31:0] RESULT1_REG;
-  assign result[63:32] = RESULT1_REG;
-  always @(posedge clk_i or posedge rst_i)
-    if (rst_i) RESULT1_REG <= 0;
-    else if (wb_we & (adr_i[16-1:0] == RESULT1_REG_OFFSET)) RESULT1_REG <= dat_i[32-1:0];
-
-  reg [31:0] RESULT2_REG;
-  assign result[95:64] = RESULT2_REG;
-  always @(posedge clk_i or posedge rst_i)
-    if (rst_i) RESULT2_REG <= 0;
-    else if (wb_we & (adr_i[16-1:0] == RESULT2_REG_OFFSET)) RESULT2_REG <= dat_i[32-1:0];
-
-  reg [31:0] RESULT3_REG;
-  assign result[127:96] = RESULT3_REG;
-  always @(posedge clk_i or posedge rst_i)
-    if (rst_i) RESULT3_REG <= 0;
-    else if (wb_we & (adr_i[16-1:0] == RESULT3_REG_OFFSET)) RESULT3_REG <= dat_i[32-1:0];
-
-  localparam GCLK_REG_OFFSET = 16'hFF10;
-  always @(posedge clk_i or posedge rst_i)
-    if (rst_i) GCLK_REG <= 0;
-    else if (wb_we & (adr_i[16-1:0] == GCLK_REG_OFFSET)) GCLK_REG <= dat_i[1-1:0];
+  wire [31:0] RESULT0_WIRE = result[31:0];
+  wire [31:0] RESULT1_WIRE = result[63:32];
+  wire [31:0] RESULT2_WIRE = result[95:64];
+  wire [31:0] RESULT3_WIRE = result[127:96];
 
   reg  [  1:0] IM_REG;
   reg  [  1:0] IC_REG;
   reg  [  1:0] RIS_REG;
 
   wire [2-1:0] MIS_REG = RIS_REG & IM_REG;
-  always @(posedge clk_i or posedge rst_i)
-    if (rst_i) IM_REG <= 0;
-    else if (wb_we & (adr_i[16-1:0] == IM_REG_OFFSET)) IM_REG <= dat_i[2-1:0];
-  always @(posedge clk_i or posedge rst_i)
-    if (rst_i) IC_REG <= 2'b0;
-    else if (wb_we & (adr_i[16-1:0] == IC_REG_OFFSET)) IC_REG <= dat_i[2-1:0];
+  always @(posedge wb_clk_i or posedge wb_rst_i)
+    if (wb_rst_i) IM_REG <= 2'b0;
+    else if (wb_we & (wbs_adr_i[16-1:0] == IM_REG_OFFSET)) IM_REG <= wbs_dat_i[2-1:0];
+  always @(posedge wb_clk_i or posedge wb_rst_i)
+    if (wb_rst_i) IC_REG <= 2'b0;
+    else if (wb_we & (wbs_adr_i[16-1:0] == IC_REG_OFFSET)) IC_REG <= wbs_dat_i[2-1:0];
     else IC_REG <= 2'd0;
 
   wire [0:0] valid = result_valid;
 
   integer _i_;
-  always @(posedge clk_i or posedge rst_i)
-    if (rst_i) RIS_REG <= 0;
+  always @(posedge wb_clk_i or posedge wb_rst_i)
+    if (wb_rst_i) RIS_REG <= 2'b0;
     else begin
       for (_i_ = 0; _i_ < 1; _i_ = _i_ + 1) begin
         if (IC_REG[_i_]) RIS_REG[_i_] <= 1'b0;
@@ -250,33 +218,34 @@ module EF_AES_WB (
       .result_valid(result_valid)
   );
 
-  assign	dat_o = 
-			(adr_i[16-1:0] == STATUS_REG_OFFSET)	? STATUS_WIRE :
-			(adr_i[16-1:0] == CTRL_REG_OFFSET)	? CTRL_REG :
-			(adr_i[16-1:0] == KEY0_REG_OFFSET)	? KEY0_REG :
-			(adr_i[16-1:0] == KEY1_REG_OFFSET)	? KEY1_REG :
-			(adr_i[16-1:0] == KEY2_REG_OFFSET)	? KEY2_REG :
-			(adr_i[16-1:0] == KEY3_REG_OFFSET)	? KEY3_REG :
-			(adr_i[16-1:0] == KEY4_REG_OFFSET)	? KEY4_REG :
-			(adr_i[16-1:0] == KEY5_REG_OFFSET)	? KEY5_REG :
-			(adr_i[16-1:0] == KEY6_REG_OFFSET)	? KEY6_REG :
-			(adr_i[16-1:0] == KEY7_REG_OFFSET)	? KEY7_REG :
-			(adr_i[16-1:0] == BLOCK0_REG_OFFSET)	? BLOCK0_REG :
-			(adr_i[16-1:0] == BLOCK1_REG_OFFSET)	? BLOCK1_REG :
-			(adr_i[16-1:0] == BLOCK2_REG_OFFSET)	? BLOCK2_REG :
-			(adr_i[16-1:0] == BLOCK3_REG_OFFSET)	? BLOCK3_REG :
-			(adr_i[16-1:0] == RESULT0_REG_OFFSET)	? RESULT0_REG :
-			(adr_i[16-1:0] == RESULT1_REG_OFFSET)	? RESULT1_REG :
-			(adr_i[16-1:0] == RESULT2_REG_OFFSET)	? RESULT2_REG :
-			(adr_i[16-1:0] == RESULT3_REG_OFFSET)	? RESULT3_REG :
-			(adr_i[16-1:0] == IM_REG_OFFSET)	? IM_REG :
-			(adr_i[16-1:0] == MIS_REG_OFFSET)	? MIS_REG :
-			(adr_i[16-1:0] == RIS_REG_OFFSET)	? RIS_REG :
-			(adr_i[16-1:0] == IC_REG_OFFSET)	? IC_REG :
+  assign	wbs_dat_o = 
+			(wbs_adr_i[16-1:0] == STATUS_REG_OFFSET)	? {24'b0, STATUS_WIRE} :
+			(wbs_adr_i[16-1:0] == CTRL_REG_OFFSET)	? {24'b0, CTRL_REG} :
+			(wbs_adr_i[16-1:0] == KEY0_REG_OFFSET)	? KEY0_REG :
+			(wbs_adr_i[16-1:0] == KEY1_REG_OFFSET)	? KEY1_REG :
+			(wbs_adr_i[16-1:0] == KEY2_REG_OFFSET)	? KEY2_REG :
+			(wbs_adr_i[16-1:0] == KEY3_REG_OFFSET)	? KEY3_REG :
+			(wbs_adr_i[16-1:0] == KEY4_REG_OFFSET)	? KEY4_REG :
+			(wbs_adr_i[16-1:0] == KEY5_REG_OFFSET)	? KEY5_REG :
+			(wbs_adr_i[16-1:0] == KEY6_REG_OFFSET)	? KEY6_REG :
+			(wbs_adr_i[16-1:0] == KEY7_REG_OFFSET)	? KEY7_REG :
+			(wbs_adr_i[16-1:0] == BLOCK0_REG_OFFSET)	? BLOCK0_REG :
+			(wbs_adr_i[16-1:0] == BLOCK1_REG_OFFSET)	? BLOCK1_REG :
+			(wbs_adr_i[16-1:0] == BLOCK2_REG_OFFSET)	? BLOCK2_REG :
+			(wbs_adr_i[16-1:0] == BLOCK3_REG_OFFSET)	? BLOCK3_REG :
+			(wbs_adr_i[16-1:0] == RESULT0_REG_OFFSET)	? RESULT0_WIRE :
+			(wbs_adr_i[16-1:0] == RESULT1_REG_OFFSET)	? RESULT1_WIRE :
+			(wbs_adr_i[16-1:0] == RESULT2_REG_OFFSET)	? RESULT2_WIRE :
+			(wbs_adr_i[16-1:0] == RESULT3_REG_OFFSET)	? RESULT3_WIRE :
+			(wbs_adr_i[16-1:0] == IM_REG_OFFSET)	? {30'b0, IM_REG} :
+			(wbs_adr_i[16-1:0] == MIS_REG_OFFSET)	? {30'b0, MIS_REG} :
+			(wbs_adr_i[16-1:0] == RIS_REG_OFFSET)	? {30'b0, RIS_REG} :
+			(wbs_adr_i[16-1:0] == IC_REG_OFFSET)	? {30'b0, IC_REG} :
 			32'hDEADBEEF;
 
-  always @(posedge clk_i or posedge rst_i)
-    if (rst_i) ack_o <= 1'b0;
-    else if (wb_valid & ~ack_o) ack_o <= 1'b1;
-    else ack_o <= 1'b0;
+  always @(posedge wb_clk_i or posedge wb_rst_i)
+    if (wb_rst_i) wbs_ack_o <= 1'b0;
+    else if (wb_valid & ~wbs_ack_o) wbs_ack_o <= 1'b1;
+    else wbs_ack_o <= 1'b0;
+
 endmodule
